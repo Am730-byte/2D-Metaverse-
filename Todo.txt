@@ -1,0 +1,79 @@
+1. Phase 1 — Game Rendering
+
+Integrate Phaser into Next.js (client-only component)
+
+Create a temporary flat map
+
+Add player sprite
+
+Add keyboard movement
+
+Smooth movement & render loop
+
+2. Phase 2 — Real-Time Sync
+
+Create WebSocket backend (/server)
+
+Connect Phaser client → WebSocket server
+
+Broadcast player positions
+
+Render other players on screen
+
+Handle join/leave events
+
+3. Phase 3 — Proximity Voice (WebRTC)
+
+Request mic permission cleanly
+
+Implement WebRTC peer connections
+
+Use WebSocket as signaling channel
+
+Set up proximity detection (distance checks)
+
+Fade voice volume based on distance (Web Audio API)
+
+Auto-connect audio when close
+
+Auto-disconnect when far
+
+4. Phase 4 — Polish
+
+Better sprites + animations
+
+Add names / labels
+
+Add mic mute/unmute UI
+
+Optional: speaking indicator
+
+Add simple collision boundaries
+
+Add smoother interpolation for movement
+
+5. Phase 5 — Deployment
+
+Deploy frontend (Next.js) on Vercel
+
+Deploy WebSocket backend on Railway/Render
+
+Add env variables properly
+
+Test multi-user live scenario
+
+Make demo video / screen recording
+
+6. Phase 6 — Future Enhancements
+
+Multiple rooms/maps
+
+Zone-based audio effects
+
+Chat bubbles / emotes
+
+Persistent accounts (auth + DB)
+
+Redis for distributed zones
+
+Moving backend from Node to Golang (optional)
