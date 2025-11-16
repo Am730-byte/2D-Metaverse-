@@ -283,6 +283,116 @@
                  "width":158,
                  "x":882,
                  "y":512
+                }, 
+                {
+                 "height":1048,
+                 "id":12,
+                 "name":"roof_area",
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":388,
+                 "x":12,
+                 "y":16
+                }, 
+                {
+                 "height":0,
+                 "id":13,
+                 "name":"",
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":0,
+                 "x":-462,
+                 "y":262
+                }, 
+                {
+                 "height":218,
+                 "id":17,
+                 "name":"roof_area",
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":354,
+                 "x":18,
+                 "y":1210
+                }, 
+                {
+                 "height":60,
+                 "id":18,
+                 "name":"roof_area",
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":282,
+                 "x":386,
+                 "y":1214
+                }, 
+                {
+                 "height":194,
+                 "id":19,
+                 "name":"roof_area",
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":108,
+                 "x":698,
+                 "y":1218
+                }, 
+                {
+                 "height":118,
+                 "id":20,
+                 "name":"roof_area",
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":304,
+                 "x":384,
+                 "y":1296
+                }, 
+                {
+                 "height":512,
+                 "id":22,
+                 "name":"roof_area",
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":840,
+                 "x":548,
+                 "y":534
+                }, 
+                {
+                 "height":378,
+                 "id":23,
+                 "name":"roof_area",
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":838,
+                 "x":542,
+                 "y":12
+                }, 
+                {
+                 "height":748,
+                 "id":24,
+                 "name":"roof_area",
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":364,
+                 "x":1544,
+                 "y":-4
+                }, 
+                {
+                 "height":376,
+                 "id":25,
+                 "name":"roof_area",
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":504,
+                 "x":1410,
+                 "y":1056
                 }],
          "opacity":1,
          "type":"objectgroup",
@@ -332,7 +442,7 @@
          "y":0
         }],
  "nextlayerid":11,
- "nextobjectid":12,
+ "nextobjectid":26,
  "orientation":"orthogonal",
  "renderorder":"right-down",
  "tiledversion":"1.11.2",
@@ -341,7 +451,7 @@
         {
          "columns":16,
          "firstgid":1,
-         "image":"/tilesets/Interiors_free_48x48.png",
+         "image":"..\/..\/..\/OfficeLimezu\/Modern tiles_Free\/Interiors_free\/48x48\/Interiors_free_48x48.png",
          "imageheight":4272,
          "imagewidth":768,
          "margin":0,
@@ -354,7 +464,7 @@
         {
          "columns":17,
          "firstgid":1425,
-         "image":"/tilesets/Room_Builder_free_48x48.png",
+         "image":"..\/..\/..\/OfficeLimezu\/Modern tiles_Free\/Interiors_free\/48x48\/Room_Builder_free_48x48.png",
          "imageheight":1104,
          "imagewidth":816,
          "margin":0,
@@ -367,7 +477,7 @@
         {
          "columns":12,
          "firstgid":1816,
-         "image":"/tilesets/Pixel_Art_Rpg_Tileset.jpg",
+         "image":"..\/..\/..\/OfficeLimezu\/Pixel Art Rpg Tileset.jpg",
          "imageheight":1248,
          "imagewidth":576,
          "margin":0,

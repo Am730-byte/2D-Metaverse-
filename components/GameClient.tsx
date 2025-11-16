@@ -10,22 +10,19 @@ export default function GameClient() {
       width: 1920,
       height: 1080,
       backgroundColor: "#1d1d1d",
-      scale: {
-        mode: Phaser.Scale.RESIZE,
-      },
+      scale: { mode: Phaser.Scale.RESIZE },
       parent: "phaser-container",
 
       physics: {
         default: "arcade",
-        arcade: {
-          gravity: { x: 0, y: 0 }, // FIXED
-          debug: false,
-        },
+        arcade: { gravity: { x: 0, y: 0 }, debug: false },
       },
 
       scene: {
         player: null,
         cursors: null,
+        darkness: null,
+        visionMask: null,
 
         preload() {
           this.load.tilemapTiledJSON("officeMap", "/maps/office.json");
@@ -36,12 +33,12 @@ export default function GameClient() {
 
           this.load.spritesheet("adam_idle", "/characters/Adam_idle_16x16.png", {
             frameWidth: 16,
-            frameHeight: 16,
+            frameHeight: 32,
           });
 
           this.load.spritesheet("adam_run", "/characters/Adam_run_16x16.png", {
             frameWidth: 16,
-            frameHeight: 16,
+            frameHeight: 32,
           });
         },
 
@@ -52,29 +49,32 @@ export default function GameClient() {
           const rpg = map.addTilesetImage("Pixel Art Rpg Tileset", "RPG");
           const builder = map.addTilesetImage("Room_Builder_free_48x48", "RoomBuilder");
 
-          const groundLayer = map
-            .createLayer("Ground", [interiors, rpg, builder])
-            .setDepth(0);
-
-          const wallLayer = map
-            .createLayer("Wall", [interiors, rpg, builder])
-            .setDepth(10);
-
-          const propsLayer = map
-            .createLayer("Props", [interiors, rpg, builder])
-            .setDepth(20);
+          const groundLayer = map.createLayer("Ground", [interiors, rpg, builder]).setDepth(0);
+          const wallLayer = map.createLayer("Wall", [interiors, rpg, builder]).setDepth(10);
+          const propsLayer = map.createLayer("Props", [interiors, rpg, builder]).setDepth(20);
 
           const collisionLayer = map
             .createLayer("Collision", [interiors, rpg, builder])
             .setDepth(30);
-
-            const roofLayer = map
-  .createLayer("Roof", [interiors, rpg, builder])
-  .setDepth(50);
-
           collisionLayer.setCollisionByExclusion([-1]);
+          collisionLayer.setVisible(false);
 
-          
+          // Spawn player
+          const spawn = map.findObject(
+            "Objects",
+            (obj) => obj.name === "player_spawn"
+          );
+
+          this.player = this.physics.add
+            .sprite(spawn.x, spawn.y, "adam_idle")
+            .setScale(1.6)
+            .setDepth(50);
+
+          // Reduce collision body
+          this.player.body.setSize(12, 20);
+          this.player.body.setOffset(2, 10);
+
+          this.physics.add.collider(this.player, collisionLayer);
 
           // Animations
           this.anims.create({
@@ -91,62 +91,62 @@ export default function GameClient() {
             repeat: -1,
           });
 
-          // Spawn
-          const spawn = map.findObject(
-            "Objects",
-            (obj: Phaser.Types.Tilemaps.TiledObject) => obj.name === "player_spawn"
-          );
-
-          this.player = this.physics.add
-            .sprite(spawn.x, spawn.y, "adam_idle")
-            .setScale(2)
-            .setDepth(50);
-
-          this.physics.add.collider(this.player, collisionLayer);
-
-          this.cursors = this.input.keyboard.createCursorKeys();
-
+          // WASD keys
           this.cursors = this.input.keyboard.addKeys({
             up: Phaser.Input.Keyboard.KeyCodes.W,
             down: Phaser.Input.Keyboard.KeyCodes.S,
             left: Phaser.Input.Keyboard.KeyCodes.A,
-            right: Phaser.Input.Keyboard.KeyCodes.D
+            right: Phaser.Input.Keyboard.KeyCodes.D,
           });
+
+          // ---- FOG OF WAR ----
+          this.darkness = this.make.graphics({});
+          this.darkness.fillStyle(0x000000, 0.85);
+          this.darkness.fillRect(0, 0, map.widthInPixels, map.heightInPixels);
+
+          this.visionMask = this.make.graphics({ x: 0, y: 0 });
+          const mask = this.darkness.createBitmapMask(this.visionMask);
+
+          this.darkness.setMask(mask);
         },
 
         update() {
           const speed = 150;
-          const cursors = this.cursors;
+          const c = this.cursors;
 
           if (!this.player) return;
 
           let vx = 0;
           let vy = 0;
 
-          if (cursors.left.isDown) vx = -speed;
-          else if (cursors.right.isDown) vx = speed;
+          if (c.left.isDown) vx = -speed;
+          else if (c.right.isDown) vx = speed;
 
-          if (cursors.up.isDown) vy = -speed;
-          else if (cursors.down.isDown) vy = speed;
+          if (c.up.isDown) vy = -speed;
+          else if (c.down.isDown) vy = speed;
 
           this.player.setVelocity(vx, vy);
 
-          // Play animations
-          if (vx !== 0 || vy !== 0) {
+          if (vx !== 0 || vy !== 0)
             this.player.play("adam_run_anim", true);
-          } else {
+          else
             this.player.play("adam_idle_anim", true);
-          }
-        }
-        ,
+
+          // ---- UPDATE VISION MASK ----
+          const radius = 140;
+
+          this.visionMask.clear();
+          this.visionMask.fillStyle(0xffffff, 1);
+          this.visionMask.beginPath();
+          this.visionMask.arc(this.player.x, this.player.y, radius, 0, Math.PI * 2);
+          this.visionMask.fill();
+        },
       },
     };
 
     const game = new Phaser.Game(config);
 
-    return () => {
-      game.destroy(true);
-    };
+    return () => game.destroy(true);
   }, []);
 
   return <div id="phaser-container" />;
