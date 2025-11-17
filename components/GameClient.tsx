@@ -21,8 +21,6 @@ export default function GameClient() {
       scene: {
         player: null,
         cursors: null,
-        darkness: null,
-        visionMask: null,
 
         preload() {
           this.load.tilemapTiledJSON("officeMap", "/maps/office.json");
@@ -49,29 +47,27 @@ export default function GameClient() {
           const rpg = map.addTilesetImage("Pixel Art Rpg Tileset", "RPG");
           const builder = map.addTilesetImage("Room_Builder_free_48x48", "RoomBuilder");
 
-          const groundLayer = map.createLayer("Ground", [interiors, rpg, builder]).setDepth(0);
-          const wallLayer = map.createLayer("Wall", [interiors, rpg, builder]).setDepth(10);
-          const propsLayer = map.createLayer("Props", [interiors, rpg, builder]).setDepth(20);
+          const groundLayer = map.createLayer("Ground", [interiors, rpg, builder]).setDepth(10);
+          const wallLayer = map.createLayer("Wall", [interiors, rpg, builder]).setDepth(20);
+          const propsLayer = map.createLayer("Props", [interiors, rpg, builder]).setDepth(30);
 
           const collisionLayer = map
             .createLayer("Collision", [interiors, rpg, builder])
-            .setDepth(30);
-          collisionLayer.setCollisionByExclusion([-1]);
-          collisionLayer.setVisible(false);
+            .setDepth(40)
+            .setVisible(false);
 
-          // Spawn player
-          const spawn = map.findObject(
-            "Objects",
-            (obj) => obj.name === "player_spawn"
-          );
+          collisionLayer.setCollisionByExclusion([-1]);
+
+          // Spawn
+          const spawn = map.findObject("Objects", (obj: Phaser.Types.Tilemaps.TiledObject) => obj.name === "player_spawn");
 
           this.player = this.physics.add
             .sprite(spawn.x, spawn.y, "adam_idle")
-            .setScale(1.6)
-            .setDepth(50);
+            .setScale(1.9)
+            .setDepth(1000);
 
-          // Reduce collision body
-          this.player.body.setSize(12, 20);
+          // Hitbox fix
+          this.player.body.setSize(8, 15);
           this.player.body.setOffset(2, 10);
 
           this.physics.add.collider(this.player, collisionLayer);
@@ -91,7 +87,7 @@ export default function GameClient() {
             repeat: -1,
           });
 
-          // WASD keys
+          // Controls
           this.cursors = this.input.keyboard.addKeys({
             up: Phaser.Input.Keyboard.KeyCodes.W,
             down: Phaser.Input.Keyboard.KeyCodes.S,
@@ -99,25 +95,18 @@ export default function GameClient() {
             right: Phaser.Input.Keyboard.KeyCodes.D,
           });
 
-          // ---- FOG OF WAR ----
-          this.darkness = this.make.graphics({});
-          this.darkness.fillStyle(0x000000, 0.85);
-          this.darkness.fillRect(0, 0, map.widthInPixels, map.heightInPixels);
-
-          this.visionMask = this.make.graphics({ x: 0, y: 0 });
-          const mask = this.darkness.createBitmapMask(this.visionMask);
-
-          this.darkness.setMask(mask);
+          // Camera follow
+          this.cameras.main.startFollow(this.player, true, 0.2, 0.1);
+          this.cameras.main.setRoundPixels(true);
+          this.cameras.main.setZoom(1.6);
+          this.cameras.main.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
         },
 
         update() {
           const speed = 150;
           const c = this.cursors;
 
-          if (!this.player) return;
-
-          let vx = 0;
-          let vy = 0;
+          let vx = 0, vy = 0;
 
           if (c.left.isDown) vx = -speed;
           else if (c.right.isDown) vx = speed;
@@ -131,21 +120,11 @@ export default function GameClient() {
             this.player.play("adam_run_anim", true);
           else
             this.player.play("adam_idle_anim", true);
-
-          // ---- UPDATE VISION MASK ----
-          const radius = 140;
-
-          this.visionMask.clear();
-          this.visionMask.fillStyle(0xffffff, 1);
-          this.visionMask.beginPath();
-          this.visionMask.arc(this.player.x, this.player.y, radius, 0, Math.PI * 2);
-          this.visionMask.fill();
         },
       },
     };
 
     const game = new Phaser.Game(config);
-
     return () => game.destroy(true);
   }, []);
 
