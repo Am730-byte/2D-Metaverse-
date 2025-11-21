@@ -208,5 +208,14 @@ export default function GameClientMultiplayer({ roomId, playerName }: { roomId: 
     };
   }, [roomId, playerName]);
 
-  return <div id="phaser-container" style={{ width: "100%", height: "100vh" }} />;
+  return (
+    <div 
+      id="phaser-container" 
+      style={{ 
+        width: "100%", 
+        height: "100vh",
+        overflow: "hidden"
+      }} 
+    />
+  );
 }

@@ -20,7 +20,8 @@ export default function JoinPage() {
       setLoading(false);
       if (res?.ok) {
         try { localStorage.setItem(`playerId:${roomId}`, res.playerId); } catch(e){}
-        router.push(`/play/room/${roomId}?username=${encodeURIComponent(name)}`);
+        // Go to LOBBY first, not directly to game
+        router.push(`/play/lobby/${roomId}?username=${encodeURIComponent(name)}`);
       } else {
         alert("join failed: " + (res?.reason || "unknown"));
       }

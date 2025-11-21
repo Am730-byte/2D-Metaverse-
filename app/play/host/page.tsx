@@ -20,7 +20,8 @@ export default function HostPage() {
       if (res?.ok && res.roomId) {
         // store playerId locally for persistence
         try { localStorage.setItem(`playerId:${res.roomId}`, res.playerId); } catch(e){}
-        router.push(`/play/room/${res.roomId}?username=${encodeURIComponent(name)}`);
+        // Go to LOBBY first, not directly to game
+        router.push(`/play/lobby/${res.roomId}?username=${encodeURIComponent(name)}`);
       } else {
         alert("couldn't create room — try again");
       }

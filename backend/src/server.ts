@@ -134,12 +134,7 @@ io.on("connection", (socket: Socket) => {
         return socket.emit("room-join-failed", { reason: "not_found" });
       }
 
-      if (room.started) {
-        cb?.({ ok: false, reason: "already_started" });
-        return socket.emit("room-join-failed", { reason: "already_started" });
-      }
-
-      // reconnect existing player if they provided id
+      // reconnect existing player if they provided id (allow even if game started)
       if (incomingId && room.players.has(incomingId)) {
         const existing = room.players.get(incomingId)!;
         existing.socketId = socket.id;
@@ -168,9 +163,16 @@ io.on("connection", (socket: Socket) => {
         });
 
         // let others know this player reconnected
-        socket.to(`room:${room.id}`).emit("player-reconnected", { playerId: incomingId });
+        io.to(`room:${room.id}`).emit("player-reconnected", { playerId: incomingId });
 
-        return cb?.({ ok: true, roomId: room.id, playerId: incomingId, players });
+
+        return cb?.({ ok: true, roomId: room.id, playerId: incomingId, players, hostId: room.hostId });
+      }
+
+      // Don't allow NEW players to join after game started
+      if (room.started) {
+        cb?.({ ok: false, reason: "already_started" });
+        return socket.emit("room-join-failed", { reason: "already_started" });
       }
 
       // normal new join
@@ -195,7 +197,11 @@ io.on("connection", (socket: Socket) => {
         isHost: p.isHost,
       }));
 
-      // only send full state to joiner
+      // tell others FIRST (before they join the room namespace)
+      console.log(`📢 Broadcasting player-joined to room ${room.id}:`, newPlayer.username);
+      socket.to(`room:${room.id}`).emit("player-joined", { player: newPlayer });
+
+      // then send full state to joiner
       socket.emit("room-joined", {
         ok: true,
         roomId: room.id,
@@ -204,10 +210,11 @@ io.on("connection", (socket: Socket) => {
         hostId: room.hostId,
       });
 
-      // tell others just about the new player
-      socket.to(`room:${room.id}`).emit("player-joined", { player: newPlayer });
+      console.log(`✅ ${newPlayer.username} joined room ${room.id}. Total players: ${room.players.size}`);
 
-      return cb?.({ ok: true, roomId: room.id, playerId: newId, players });
+
+      // Include hostId in callback response
+      return cb?.({ ok: true, roomId: room.id, playerId: newId, players, hostId: room.hostId });
     }
 
     // create room
@@ -237,10 +244,31 @@ io.on("connection", (socket: Socket) => {
       roomId: room.id,
       playerId: newPlayerId,
       players,
+      hostId: room.hostId,
     });
 
-    return cb?.({ ok: true, roomId: room.id, playerId: newPlayerId, players });
+    return cb?.({ ok: true, roomId: room.id, playerId: newPlayerId, players, hostId: room.hostId });
   });
+
+
+  // start game
+socket.on("start-game", ({ roomId, playerId }, cb) => {
+  const room = rooms.get(roomId);
+  if (!room) return cb?.({ ok: false, reason: "not_found" });
+
+  // only host can start
+  if (room.hostId !== playerId) {
+    return cb?.({ ok: false, reason: "not_host" });
+  }
+
+  room.started = true;
+
+  // notify ALL players that game has started
+  io.to(`room:${roomId}`).emit("game-started", { roomId });
+
+  cb?.({ ok: true });
+});
+
 
   // movement
   socket.on("player-move", ({ roomId, playerId, x, y, anim }) => {
