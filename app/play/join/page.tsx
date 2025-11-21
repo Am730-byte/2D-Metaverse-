@@ -19,6 +19,7 @@ export default function JoinPage() {
     socket.emit("join-room", { roomId, username: name }, (res: any) => {
       setLoading(false);
       if (res?.ok) {
+        try { localStorage.setItem(`playerId:${roomId}`, res.playerId); } catch(e){}
         router.push(`/play/room/${roomId}?username=${encodeURIComponent(name)}`);
       } else {
         alert("join failed: " + (res?.reason || "unknown"));

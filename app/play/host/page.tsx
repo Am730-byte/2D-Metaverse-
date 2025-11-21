@@ -10,15 +10,16 @@ export default function HostPage() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  async function handleCreate(e: React.FormEvent) {
+  function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return alert("Provide a username :)");
     setLoading(true);
     const socket = getSocket();
-    socket.emit("create-room", { username: name }, (res: any) => {
+    socket.emit("join-room", { username: name }, (res: any) => {
       setLoading(false);
       if (res?.ok && res.roomId) {
-        // navigate to room page with username in query
+        // store playerId locally for persistence
+        try { localStorage.setItem(`playerId:${res.roomId}`, res.playerId); } catch(e){}
         router.push(`/play/room/${res.roomId}?username=${encodeURIComponent(name)}`);
       } else {
         alert("couldn't create room — try again");

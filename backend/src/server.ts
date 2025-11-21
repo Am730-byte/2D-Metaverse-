@@ -12,7 +12,7 @@ type Player = {
   x?: number;
   y?: number;
   anim?: string;
-  isHost?: boolean;
+  isHost: boolean;
 };
 
 type Room = {
@@ -30,27 +30,25 @@ app.use(express.json());
 
 const httpServer = http.createServer(app);
 const io = new IOServer(httpServer, {
-  cors: { origin: "*" } // tighten for prod
+  cors: { origin: "*" },
 });
 
-const PORT = process.env.PORT ? parseInt(process.env.PORT) : 5000;
+// in-memory store
 const rooms = new Map<string, Room>();
 
+type DisconnectTimer = NodeJS.Timeout;
+const disconnectTimers = new Map<string, Map<string, DisconnectTimer>>();
+
 function makeRoomId(): string {
-  const tries = 6;
-  for (let i = 0; i < tries; i++) {
-    const id = Math.floor(100000 + Math.random() * 900000).toString();
-    if (!rooms.has(id)) return id;
-  }
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-function createRoom(hostPlayer: Player): Room {
+function createRoom(host: Player): Room {
   const id = makeRoomId();
   const room: Room = {
     id,
-    hostId: hostPlayer.id,
-    players: new Map([[hostPlayer.id, hostPlayer]]),
+    hostId: host.id,
+    players: new Map([[host.id, host]]),
     createdAt: Date.now(),
     started: false,
   };
@@ -70,9 +68,15 @@ function createRoom(hostPlayer: Player): Room {
 function removePlayerFromRoom(roomId: string, playerId: string) {
   const room = rooms.get(roomId);
   if (!room) return;
+
   room.players.delete(playerId);
 
-  // host left before start -> close
+  if (room.players.size === 0) {
+    if (room.timeout) clearTimeout(room.timeout);
+    rooms.delete(roomId);
+    return;
+  }
+
   if (!room.started && room.hostId === playerId) {
     if (room.timeout) clearTimeout(room.timeout);
     rooms.delete(roomId);
@@ -81,21 +85,24 @@ function removePlayerFromRoom(roomId: string, playerId: string) {
     return;
   }
 
-  // if empty -> delete
-  if (room.players.size === 0) {
-    if (room.timeout) clearTimeout(room.timeout);
-    rooms.delete(roomId);
-    return;
-  }
-
-  // pick new host if needed
-  if (room.hostId === playerId && room.players.size > 0) {
-    const newHostId = Array.from(room.players.keys())[0];
-    room.hostId = newHostId;
-    io.to(`room:${roomId}`).emit("host-changed", { newHostId });
+  if (room.hostId === playerId) {
+    const first = Array.from(room.players.values())[0];
+    room.hostId = first.id;
+    io.to(`room:${roomId}`).emit("host-changed", { newHostId: first.id });
   }
 }
 
+function clearDisconnectTimer(roomId: string, playerId: string) {
+  const group = disconnectTimers.get(roomId);
+  if (!group) return;
+  const t = group.get(playerId);
+  if (t) {
+    clearTimeout(t);
+    group.delete(playerId);
+  }
+}
+
+// REST: quick room info (optional)
 app.get("/room/:id", (req, res) => {
   const id = req.params.id;
   const room = rooms.get(id);
@@ -111,160 +118,209 @@ app.get("/room/:id", (req, res) => {
   res.json({ ok: true, room: { id: room.id, started: room.started, players } });
 });
 
-/**
- * SOCKET.IO
- */
 io.on("connection", (socket: Socket) => {
   console.log("socket connected:", socket.id);
 
-  // create room
-  socket.on("create-room", (payload: { username?: string }, cb?: Function) => {
-    try {
-      const playerId = uuidv4();
-      const player: Player = {
-        id: playerId,
+  // unified create/join with reconnection support (client may pass playerId to reattach)
+  socket.on("join-room", (payload, cb) => {
+    const { roomId: requestedRoomId, username = "anon", playerId: incomingId } =
+      payload || {};
+
+    // join existing room
+    if (requestedRoomId) {
+      const room = rooms.get(requestedRoomId);
+      if (!room) {
+        cb?.({ ok: false, reason: "not_found" });
+        return socket.emit("room-join-failed", { reason: "not_found" });
+      }
+
+      if (room.started) {
+        cb?.({ ok: false, reason: "already_started" });
+        return socket.emit("room-join-failed", { reason: "already_started" });
+      }
+
+      // reconnect existing player if they provided id
+      if (incomingId && room.players.has(incomingId)) {
+        const existing = room.players.get(incomingId)!;
+        existing.socketId = socket.id;
+        existing.username = username;
+
+        socket.join(`room:${room.id}`);
+        (socket as any).data = { roomId: room.id, playerId: incomingId };
+
+        clearDisconnectTimer(room.id, incomingId);
+
+        const players = Array.from(room.players.values()).map((p) => ({
+          id: p.id,
+          username: p.username,
+          x: p.x,
+          y: p.y,
+          anim: p.anim,
+          isHost: p.isHost,
+        }));
+
+        socket.emit("room-joined", {
+          ok: true,
+          roomId: room.id,
+          playerId: incomingId,
+          players,
+          hostId: room.hostId,
+        });
+
+        // let others know this player reconnected
+        socket.to(`room:${room.id}`).emit("player-reconnected", { playerId: incomingId });
+
+        return cb?.({ ok: true, roomId: room.id, playerId: incomingId, players });
+      }
+
+      // normal new join
+      const newId = uuidv4();
+      const newPlayer: Player = {
+        id: newId,
         socketId: socket.id,
-        username: payload?.username || "anon",
-        isHost: true,
+        username,
+        isHost: false,
       };
 
-      const room = createRoom(player);
+      room.players.set(newId, newPlayer);
       socket.join(`room:${room.id}`);
-      (socket as any).data = { roomId: room.id, playerId };
+      (socket as any).data = { roomId: room.id, playerId: newId };
 
-      // emit room-state for convenience
       const players = Array.from(room.players.values()).map((p) => ({
         id: p.id,
         username: p.username,
         x: p.x,
         y: p.y,
+        anim: p.anim,
         isHost: p.isHost,
       }));
 
-      socket.emit("room-created", { roomId: room.id, playerId, players });
-      io.to(`room:${room.id}`).emit("room-state", { roomId: room.id, players, started: room.started });
+      // only send full state to joiner
+      socket.emit("room-joined", {
+        ok: true,
+        roomId: room.id,
+        playerId: newId,
+        players,
+        hostId: room.hostId,
+      });
 
-      if (cb) cb({ ok: true, roomId: room.id, playerId, players });
-      console.log(`room ${room.id} created by ${player.username}`);
-    } catch (err) {
-      console.error(err);
-      if (cb) cb({ ok: false });
-    }
-  });
+      // tell others just about the new player
+      socket.to(`room:${room.id}`).emit("player-joined", { player: newPlayer });
 
-  // join room
-  socket.on("join-room", (payload: { roomId: string; username?: string }, cb?: Function) => {
-    const { roomId, username } = payload;
-    const room = rooms.get(roomId);
-    if (!room) {
-      if (cb) cb({ ok: false, reason: "not_found" });
-      socket.emit("room-join-failed", { reason: "not_found" });
-      return;
-    }
-    if (room.started) {
-      if (cb) cb({ ok: false, reason: "already_started" });
-      socket.emit("room-join-failed", { reason: "already_started" });
-      return;
+      return cb?.({ ok: true, roomId: room.id, playerId: newId, players });
     }
 
-    const playerId = uuidv4();
-    const player: Player = {
-      id: playerId,
+    // create room
+    const newPlayerId = incomingId || uuidv4();
+    const host: Player = {
+      id: newPlayerId,
       socketId: socket.id,
-      username: username || "anon",
-      isHost: false,
+      username,
+      isHost: true,
     };
 
-    room.players.set(playerId, player);
-    socket.join(`room:${roomId}`);
-    (socket as any).data = { roomId, playerId };
+    const room = createRoom(host);
+    socket.join(`room:${room.id}`);
+    (socket as any).data = { roomId: room.id, playerId: newPlayerId };
 
     const players = Array.from(room.players.values()).map((p) => ({
       id: p.id,
       username: p.username,
       x: p.x,
       y: p.y,
+      anim: p.anim,
       isHost: p.isHost,
     }));
 
-    // notify joiner
-    socket.emit("room-joined", { roomId, playerId, players });
+    socket.emit("room-created", {
+      ok: true,
+      roomId: room.id,
+      playerId: newPlayerId,
+      players,
+    });
 
-    // notify everyone of updated state
-    io.to(`room:${roomId}`).emit("room-state", { roomId, players, started: room.started });
-
-    // broadcast new player
-    socket.to(`room:${roomId}`).emit("player-joined", { player: { id: playerId, username: player.username } });
-
-    if (cb) cb({ ok: true, playerId, players });
-    console.log(`${player.username} joined room ${roomId}`);
-  });
-
-  // start game (host only)
-  socket.on("start-game", (payload: { roomId: string; playerId: string }, cb?: Function) => {
-    const { roomId, playerId } = payload;
-    const room = rooms.get(roomId);
-    if (!room) {
-      if (cb) cb({ ok: false, reason: "not_found" });
-      return;
-    }
-    if (room.hostId !== playerId) {
-      if (cb) cb({ ok: false, reason: "not_host" });
-      return;
-    }
-    room.started = true;
-    if (room.timeout) {
-      clearTimeout(room.timeout);
-      room.timeout = undefined;
-    }
-    io.to(`room:${roomId}`).emit("game-started", { roomId });
-    if (cb) cb({ ok: true });
-    console.log(`room ${roomId} started by host`);
+    return cb?.({ ok: true, roomId: room.id, playerId: newPlayerId, players });
   });
 
   // movement
-  socket.on("player-move", (payload: { roomId: string; playerId?: string; x: number; y: number; anim?: string }) => {
-    const { roomId, playerId, x, y, anim } = payload;
+  socket.on("player-move", ({ roomId, playerId, x, y, anim }) => {
     const room = rooms.get(roomId);
     if (!room) return;
 
-    // trust server-side mapping if available
-    let pId = playerId;
     const sData = (socket as any).data;
-    if (!pId && sData?.playerId) pId = sData.playerId;
+    if (sData?.playerId) playerId = sData.playerId;
 
-    if (!pId) return;
+    const p = room.players.get(playerId);
+    if (!p) return;
 
-    const pl = room.players.get(pId);
-    if (!pl) return;
+    p.x = x;
+    p.y = y;
+    p.anim = anim;
 
-    pl.x = x;
-    pl.y = y;
-    pl.anim = anim;
-
-    // broadcast movement to other clients
-    socket.to(`room:${roomId}`).emit("player-moved", { playerId: pId, x, y, anim });
+    socket.to(`room:${roomId}`).emit("player-moved", { playerId, x, y, anim });
   });
 
   // explicit leave
-  socket.on("player-left", (payload: { roomId: string; playerId: string }) => {
-    const { roomId, playerId } = payload;
+  socket.on("player-left", ({ roomId, playerId }) => {
     removePlayerFromRoom(roomId, playerId);
     socket.to(`room:${roomId}`).emit("player-left", { playerId });
     socket.leave(`room:${roomId}`);
   });
 
+  // host ends room
+  socket.on("end-room", ({ roomId, playerId }, cb) => {
+    const room = rooms.get(roomId);
+    if (!room) return cb?.({ ok: false, reason: "not_found" });
+
+    if (room.hostId !== playerId) return cb?.({ ok: false, reason: "not_host" });
+
+    const timers = disconnectTimers.get(roomId);
+    timers?.forEach((t) => clearTimeout(t));
+    disconnectTimers.delete(roomId);
+
+    io.to(`room:${roomId}`).emit("room-ended", { reason: "host_ended" });
+    io.in(`room:${roomId}`).socketsLeave(`room:${roomId}`);
+
+    rooms.delete(roomId);
+    cb?.({ ok: true });
+  });
+
+  // soft disconnect -> grace timer
   socket.on("disconnect", (reason) => {
-    const sData = (socket as any).data;
-    if (sData?.roomId && sData?.playerId) {
-      const { roomId, playerId } = sData;
-      removePlayerFromRoom(roomId, playerId);
-      socket.to(`room:${roomId}`).emit("player-left", { playerId });
-    }
     console.log("socket disconnected:", socket.id, reason);
+
+    const sData = (socket as any).data;
+    if (!sData?.roomId || !sData?.playerId) return;
+
+    const { roomId, playerId } = sData;
+
+    let group = disconnectTimers.get(roomId);
+    if (!group) {
+      group = new Map();
+      disconnectTimers.set(roomId, group);
+    }
+
+    const timer = setTimeout(() => {
+      const room = rooms.get(roomId);
+      if (!room) return;
+
+      const p = room.players.get(playerId);
+      if (!p) return;
+
+      // if they didn't reconnect (socketId still same old one), remove
+      if (p.socketId === socket.id) {
+        removePlayerFromRoom(roomId, playerId);
+        io.to(`room:${roomId}`).emit("player-left", { playerId });
+      }
+
+      group!.delete(playerId);
+    }, 1000 * 60 * 2);
+
+    group.set(playerId, timer);
   });
 });
 
+const PORT = 5000;
 httpServer.listen(PORT, () => {
-  console.log(`Backend (socket) running on :${PORT}`);
+  console.log(`Backend running on :${PORT}`);
 });

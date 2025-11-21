@@ -2,8 +2,8 @@
 "use client";
 
 import React, { useEffect, useRef } from "react";
-import * as Phaser from "phaser"; // use namespace import to avoid SSR default-export issues
-import { getSocket } from "@/app/lib/socket"; // adjust path if your helper is somewhere else
+import * as Phaser from "phaser";
+import { getSocket } from "@/app/lib/socket";
 import type { Socket } from "socket.io-client";
 
 type Remote = {
@@ -41,6 +41,7 @@ class MultiplayerScene extends Phaser.Scene {
       frameWidth: 16,
       frameHeight: 32,
     });
+
     this.load.spritesheet("adam_run", "/characters/Adam_run_16x16.png", {
       frameWidth: 16,
       frameHeight: 32,
@@ -64,20 +65,17 @@ class MultiplayerScene extends Phaser.Scene {
     collision.setCollisionByExclusion([-1]);
     collision.setVisible(false);
 
-    // spawn
-    const spawnObj = map.findObject("Objects", (o: any) => o.name === "player_spawn") || { x: 100, y: 100 };
+    const spawnObj = (map.findObject("Objects", (o: any) => o.name === "player_spawn") as any) || { x: 100, y: 100 };
 
-    this.player = this.physics.add.sprite(spawnObj.x, spawnObj.y, "adam_idle").setScale(1.9).setDepth(50);
-    this.player.body.setSize(8, 15);
-    this.player.body.setOffset(2, 10);
-
+    this.player = this.physics.add.sprite(spawnObj.x ?? 100, spawnObj.y ?? 100, "adam_idle").setScale(1.9).setDepth(50);
+    this.player.body!.setSize(8, 15);
+    this.player.body!.setOffset(2, 10);
     this.physics.add.collider(this.player, collision);
 
-    // animations
     this.anims.create({ key: "adam_idle_anim", frames: this.anims.generateFrameNumbers("adam_idle", { start: 0, end: 3 }), frameRate: 6, repeat: -1 });
     this.anims.create({ key: "adam_run_anim", frames: this.anims.generateFrameNumbers("adam_run", { start: 0, end: 3 }), frameRate: 10, repeat: -1 });
 
-    this.cursors = this.input.keyboard.addKeys({
+    this.cursors = this.input.keyboard!.addKeys({
       up: Phaser.Input.Keyboard.KeyCodes.W,
       down: Phaser.Input.Keyboard.KeyCodes.S,
       left: Phaser.Input.Keyboard.KeyCodes.A,
@@ -88,70 +86,61 @@ class MultiplayerScene extends Phaser.Scene {
     this.cameras.main.setZoom(1.6);
     this.cameras.main.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
 
-    this.setupNetwork();
-  }
-
-  setupNetwork() {
-    // remote movement
-    this.socket.on("player-moved", (data: { playerId: string; x: number; y: number; anim?: string }) => {
-      const { playerId, x, y, anim } = data;
-      if (playerId === this.playerId) return;
-
-      let r = this.remotes.get(playerId);
-      if (!r) {
-        const sprite = this.physics.add.sprite(x, y, "adam_idle").setScale(1.9).setDepth(40);
-        sprite.play("adam_idle_anim");
-        r = { id: playerId, sprite, targetX: x, targetY: y };
-        this.remotes.set(playerId, r);
-      } else {
-        r.targetX = x;
-        r.targetY = y;
-      }
-    });
-
-    // player left
-    this.socket.on("player-left", (data: { playerId: string }) => {
-      const { playerId } = data;
-      const r = this.remotes.get(playerId);
-      if (r) {
-        r.sprite.destroy();
-        this.remotes.delete(playerId);
-      }
-    });
-
-    // optional: room-state to spawn initial remote players
-    this.socket.on("room-state", (payload: { roomId: string; players: any[] }) => {
-      const spawn = (this.map && this.map.findObject("Objects", (o: any) => o.name === "player_spawn")) || { x: 100, y: 100 };
-      (payload.players || []).forEach((p) => {
+    this.socket.on("room-state", (payload: any) => {
+      // spawn known players
+      const spawn = spawnObj;
+      (payload.players || []).forEach((p: any) => {
         if (p.id === this.playerId) return;
-        if (!this.remotes.has(p.id)) {
-          const s = this.physics.add.sprite(p.x || spawn.x, p.y || spawn.y, "adam_idle").setScale(1.9).setDepth(40);
-          s.play("adam_idle_anim");
-          this.remotes.set(p.id, { id: p.id, sprite: s, targetX: p.x || spawn.x, targetY: p.y || spawn.y });
-        }
+        if (this.remotes.has(p.id)) return;
+        const s = this.physics.add.sprite(p.x || spawn.x, p.y || spawn.y, "adam_idle").setScale(1.9).setDepth(40);
+        s.play("adam_idle_anim");
+        this.remotes.set(p.id, { id: p.id, sprite: s, targetX: p.x || spawn.x, targetY: p.y || spawn.y });
       });
     });
+
+    this.socket.on("player-joined", (d: any) => {
+      const p = d.player;
+      if (p.id === this.playerId) return;
+      if (this.remotes.has(p.id)) return;
+      const s = this.physics.add.sprite(p.x || spawnObj.x, p.y || spawnObj.y, "adam_idle").setScale(1.9).setDepth(40);
+      s.play("adam_idle_anim");
+      this.remotes.set(p.id, { id: p.id, sprite: s, targetX: p.x || spawnObj.x, targetY: p.y || spawnObj.y });
+    });
+
+    this.socket.on("player-moved", (d: any) => {
+      const r = this.remotes.get(d.playerId);
+      if (!r) {
+        const s = this.physics.add.sprite(d.x, d.y, "adam_idle").setScale(1.9).setDepth(40);
+        s.play("adam_idle_anim");
+        this.remotes.set(d.playerId, { id: d.playerId, sprite: s, targetX: d.x, targetY: d.y });
+      } else {
+        r.targetX = d.x;
+        r.targetY = d.y;
+      }
+    });
+
+    this.socket.on("player-left", (d: any) => {
+      const r = this.remotes.get(d.playerId);
+      if (r) {
+        r.sprite.destroy();
+        this.remotes.delete(d.playerId);
+      }
+    });
   }
 
-  update(_: number, delta: number) {
+  update(_time: number, delta: number) {
     if (!this.player) return;
-
     const speed = 150;
-    let vx = 0;
-    let vy = 0;
-
+    let vx = 0, vy = 0;
     if (this.cursors.left.isDown) vx = -speed;
     else if (this.cursors.right.isDown) vx = speed;
-
     if (this.cursors.up.isDown) vy = -speed;
     else if (this.cursors.down.isDown) vy = speed;
 
     this.player.setVelocity(vx, vy);
-
     if (vx !== 0 || vy !== 0) this.player.play("adam_run_anim", true);
     else this.player.play("adam_idle_anim", true);
 
-    // send movement ~12Hz
     const now = Date.now();
     if (now - this.lastSent > 80) {
       this.socket.emit("player-move", {
@@ -163,7 +152,6 @@ class MultiplayerScene extends Phaser.Scene {
       this.lastSent = now;
     }
 
-    // smooth remote interpolation
     this.remotes.forEach((r) => {
       const s = r.sprite;
       const t = Math.min(1, delta / 100);
@@ -173,22 +161,28 @@ class MultiplayerScene extends Phaser.Scene {
   }
 }
 
-export default function GameClientMultiplayer({ roomId, playerName }: { roomId: string; playerName?: string }) {
+export default function GameClientMultiplayer({ roomId, playerName }: { roomId: string; playerName?: string; }) {
   const gameRef = useRef<Phaser.Game | null>(null);
 
   useEffect(() => {
     const socket = getSocket();
+    const storageKey = `playerId:${roomId}`;
+    const savedPlayerId = typeof window !== "undefined" ? localStorage.getItem(storageKey) : null;
 
-    // join room and get your server-assigned playerId
-    socket.emit("join-room", { roomId, username: playerName }, (res: any) => {
+    socket.emit("join-room", { roomId, username: playerName, playerId: savedPlayerId || undefined }, (res: any) => {
       if (!res || !res.ok) {
-        alert("failed to join room");
+        alert("Failed to join game room: " + (res?.reason || "unknown"));
         return;
       }
 
-      const playerId = res.playerId as string;
-      // create Phaser game after we have playerId
-      const scene = new MultiplayerScene(socket, roomId, playerId);
+      if (res.playerId) {
+        try { localStorage.setItem(storageKey, res.playerId); } catch(e) {}
+      }
+
+      // create game only once
+      if (gameRef.current) return;
+
+      const scene = new MultiplayerScene(socket, roomId, res.playerId ?? null);
 
       const config: Phaser.Types.Core.GameConfig = {
         type: Phaser.AUTO,
@@ -196,21 +190,21 @@ export default function GameClientMultiplayer({ roomId, playerName }: { roomId: 
         height: 1080,
         backgroundColor: "#1d1d1d",
         parent: "phaser-container",
-        physics: {
-          default: "arcade",
-          arcade: { gravity: { x: 0, y: 0 }, debug: false },
-        },
-        scene: scene,
+        physics: { default: "arcade", arcade: { gravity: { x: 0, y: 0 }, debug: false } },
+        scene,
       };
 
-      gameRef.current = new (Phaser.Game as any)(config);
+      gameRef.current = new Phaser.Game(config);
     });
 
     return () => {
-      socket.off("player-moved");
-      socket.off("player-left");
-      socket.off("room-state");
+      const s = getSocket();
+      s.off("player-moved");
+      s.off("player-left");
+      s.off("player-joined");
+      s.off("room-state");
       gameRef.current?.destroy(true);
+      gameRef.current = null;
     };
   }, [roomId, playerName]);
 
