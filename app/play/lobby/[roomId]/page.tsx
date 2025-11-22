@@ -14,3 +14,4 @@ export default function LobbyPage() {
     <LobbyClient roomId={roomId} username={username} />
   );
 }
+

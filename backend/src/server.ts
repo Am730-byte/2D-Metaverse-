@@ -169,6 +169,30 @@ io.on("connection", (socket: Socket) => {
         return cb?.({ ok: true, roomId: room.id, playerId: incomingId, players, hostId: room.hostId });
       }
 
+
+
+
+
+      // screenshare control (host request)
+      socket.on("request-screenshare-start", ({ roomId, playerId }, cb) => {
+        const room = rooms.get(roomId);
+        if (!room) return cb?.({ ok: false, reason: "not_found" });
+        if (room.hostId !== playerId) return cb?.({ ok: false, reason: "not_host" });
+
+        // inform everyone in the room that screenshare will start by host
+        io.to(`room:${roomId}`).emit("screenshare-starting", { hostId: playerId });
+        return cb?.({ ok: true });
+      });
+
+      socket.on("request-screenshare-stop", ({ roomId, playerId }, cb) => {
+        const room = rooms.get(roomId);
+        if (!room) return cb?.({ ok: false });
+        if (room.hostId !== playerId) return cb?.({ ok: false, reason: "not_host" });
+        io.to(`room:${roomId}`).emit("screenshare-stopped", { hostId: playerId });
+        return cb?.({ ok: true });
+      });
+
+
       // Don't allow NEW players to join after game started
       if (room.started) {
         cb?.({ ok: false, reason: "already_started" });
@@ -252,23 +276,75 @@ io.on("connection", (socket: Socket) => {
 
 
   // start game
-socket.on("start-game", ({ roomId, playerId }, cb) => {
-  const room = rooms.get(roomId);
-  if (!room) return cb?.({ ok: false, reason: "not_found" });
+  socket.on("start-game", ({ roomId, playerId }, cb) => {
+    const room = rooms.get(roomId);
+    if (!room) return cb?.({ ok: false, reason: "not_found" });
 
-  // only host can start
-  if (room.hostId !== playerId) {
-    return cb?.({ ok: false, reason: "not_host" });
-  }
+    // only host can start
+    if (room.hostId !== playerId) {
+      return cb?.({ ok: false, reason: "not_host" });
+    }
 
-  room.started = true;
+    room.started = true;
 
-  // notify ALL players that game has started
-  io.to(`room:${roomId}`).emit("game-started", { roomId });
+    // notify ALL players that game has started
+    io.to(`room:${roomId}`).emit("game-started", { roomId });
 
-  cb?.({ ok: true });
-});
+    // send initial room state to all players
+    io.to(`room:${roomId}`).emit("room-state", {
+      roomId: room.id,
+      players: Array.from(room.players.values()).map(p => ({
+        id: p.id,
+        username: p.username,
+        x: p.x,
+        y: p.y,
+        isHost: p.isHost
+      })),
+      hostId: room.hostId
+    });
 
+    cb?.({ ok: true });
+  });
+
+  // WebRTC signaling for voice chat - send only to target player
+  socket.on("webrtc-offer", ({ roomId, from, to, offer }) => {
+    const room = rooms.get(roomId);
+    if (!room) return;
+    
+    const targetPlayer = room.players.get(to);
+    if (targetPlayer) {
+      io.to(targetPlayer.socketId).emit("webrtc-offer", { from, offer });
+    }
+  });
+
+  socket.on("webrtc-answer", ({ roomId, from, to, answer }) => {
+    const room = rooms.get(roomId);
+    if (!room) return;
+    
+    const targetPlayer = room.players.get(to);
+    if (targetPlayer) {
+      io.to(targetPlayer.socketId).emit("webrtc-answer", { from, answer });
+    }
+  });
+
+  socket.on("webrtc-ice-candidate", ({ roomId, from, to, candidate }) => {
+    const room = rooms.get(roomId);
+    if (!room) return;
+    
+    const targetPlayer = room.players.get(to);
+    if (targetPlayer) {
+      io.to(targetPlayer.socketId).emit("webrtc-ice-candidate", { from, candidate });
+    }
+  });
+
+  // Get all players in a room (for voice chat setup)
+  socket.on("get-room-players", ({ roomId }, cb) => {
+    const room = rooms.get(roomId);
+    if (!room) return cb?.({ ok: false });
+    
+    const players = Array.from(room.players.values()).map(p => ({ id: p.id, username: p.username }));
+    cb?.({ ok: true, players });
+  });
 
   // movement
   socket.on("player-move", ({ roomId, playerId, x, y, anim }) => {
