@@ -34,6 +34,12 @@ export class VoiceChat {
   }
 
   async startVoiceChat() {
+    // Don't start if already started
+    if (this.localStream) {
+      console.log("⚠️ Voice chat already started");
+      return true;
+    }
+    
     try {
       this.localStream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
@@ -86,12 +92,25 @@ export class VoiceChat {
   }
 
   stopVoiceChat() {
+    console.log("🛑 Stopping voice chat and cleaning up");
+    
+    // Stop local stream
     if (this.localStream) {
       this.localStream.getTracks().forEach(track => track.stop());
       this.localStream = null;
     }
+    
+    // Remove all peers
     this.peers.forEach(peer => this.removePeer(peer.id));
     this.peers.clear();
+    
+    // Remove socket listeners to prevent duplicates
+    this.socket.off("webrtc-offer");
+    this.socket.off("webrtc-answer");
+    this.socket.off("webrtc-ice-candidate");
+    this.socket.off("player-joined");
+    this.socket.off("player-reconnected");
+    this.socket.off("player-left");
   }
 
   private removePeer(playerId: string) {
@@ -244,9 +263,20 @@ export class VoiceChat {
   }
 
   async handleOffer(fromPlayerId: string, offer: RTCSessionDescriptionInit) {
+    // Wait for local stream if not ready yet
     if (!this.localStream) {
-      console.error("❌ Cannot handle offer: no local stream");
-      return;
+      console.warn("⏳ Local stream not ready, waiting...");
+      let attempts = 0;
+      while (!this.localStream && attempts < 50) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        attempts++;
+      }
+      
+      if (!this.localStream) {
+        console.error("❌ Cannot handle offer: no local stream after waiting");
+        return;
+      }
+      console.log("✅ Local stream ready, proceeding with offer");
     }
 
     console.log("📨 Handling offer from", fromPlayerId, "| My ID:", this.myPlayerId);
@@ -417,6 +447,43 @@ export class VoiceChat {
         console.log("📞 Connecting to new player", player.id);
         this.createOffer(player.id);
       }
+    });
+    
+    // When a player reconnects (e.g., after refresh), re-establish connection
+    this.socket.on("player-reconnected", ({ playerId }: any) => {
+      console.log("🔄 Received player-reconnected event for:", playerId, "| My ID:", this.myPlayerId);
+      
+      if (!playerId || playerId === this.myPlayerId) {
+        console.log("⚠️ Ignoring reconnection event (self or invalid)");
+        return;
+      }
+      
+      console.log("🔄 Player reconnected:", playerId);
+      
+      // Remove old connection if exists
+      if (this.peers.has(playerId)) {
+        console.log("🗑️ Removing old connection before reconnecting");
+        this.removePeer(playerId);
+      }
+      
+      // Wait for the other player to be ready, then reconnect
+      setTimeout(() => {
+        console.log("⏰ Timeout complete, checking if should reconnect...");
+        console.log("   My ID:", this.myPlayerId, "< Their ID:", playerId, "=", this.myPlayerId < playerId);
+        console.log("   Local stream ready:", !!this.localStream);
+        
+        if (!this.localStream) {
+          console.warn("⚠️ Local stream not ready yet, skipping reconnection");
+          return;
+        }
+        
+        if (this.myPlayerId < playerId) {
+          console.log("📞 Re-establishing connection to", playerId);
+          this.createOffer(playerId);
+        } else {
+          console.log("⏳ Waiting for them to initiate (they have lower ID)");
+        }
+      }, 2000); // Increased to 2 seconds
     });
     
     // Clean up when player leaves

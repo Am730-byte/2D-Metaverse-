@@ -162,8 +162,9 @@ io.on("connection", (socket: Socket) => {
           hostId: room.hostId,
         });
 
-        // let others know this player reconnected
-        io.to(`room:${room.id}`).emit("player-reconnected", { playerId: incomingId });
+        // let others know this player reconnected (broadcast to others, not self)
+        socket.to(`room:${room.id}`).emit("player-reconnected", { playerId: incomingId });
+        console.log(`🔄 Player ${incomingId} reconnected, notifying others in room ${room.id}`);
 
 
         return cb?.({ ok: true, roomId: room.id, playerId: incomingId, players, hostId: room.hostId });

@@ -209,6 +209,7 @@ this.remotes.forEach((r) => {
 export default function GameClientMultiplayer({ roomId, playerName }: { roomId: string; playerName?: string; }) {
   const gameRef = useRef<Phaser.Game | null>(null);
   const voiceChatRef = useRef<VoiceChat | null>(null);
+  const initializingRef = useRef(false);
   const [micEnabled, setMicEnabled] = useState(false);
   const [deafened, setDeafened] = useState(false);
   const [myPlayerId, setMyPlayerId] = useState<string | null>(null);
@@ -226,14 +227,16 @@ export default function GameClientMultiplayer({ roomId, playerName }: { roomId: 
         return;
       }
 
-      if (res.playerId) {
+      if (res.playerId && !initializingRef.current) {
+        initializingRef.current = true;
         setMyPlayerId(res.playerId);
         try { localStorage.setItem(storageKey, res.playerId); } catch(e) {}
         
-        // Initialize voice chat and auto-start (only if not already created)
+        // Clean up existing voice chat if it exists
         if (voiceChatRef.current) {
-          console.log("⚠️ VoiceChat already exists, skipping creation");
-          return;
+          console.log("🔄 Cleaning up existing VoiceChat before re-initialization");
+          voiceChatRef.current.stopVoiceChat();
+          voiceChatRef.current = null;
         }
         
         const vc = new VoiceChat(socket, roomId, res.playerId);
@@ -248,14 +251,19 @@ export default function GameClientMultiplayer({ roomId, playerName }: { roomId: 
         vc.startVoiceChat().then(success => {
           if (success) {
             setVoiceReady(true);
-            // Get player list and connect
-            socket.emit("get-room-players", { roomId }, (res: any) => {
-              if (res?.players) {
-                const playerIds = res.players.map((p: any) => p.id).filter((id: string) => id !== res.playerId);
-                vc.connectToAllPlayers(playerIds);
-              }
-            });
+            // Wait a bit before connecting to ensure mic is fully ready
+            setTimeout(() => {
+              // Get player list and connect
+              socket.emit("get-room-players", { roomId }, (res: any) => {
+                if (res?.players) {
+                  const playerIds = res.players.map((p: any) => p.id);
+                  console.log("🔗 Got room players:", playerIds);
+                  vc.connectToAllPlayers(playerIds);
+                }
+              });
+            }, 500);
           }
+          initializingRef.current = false;
         });
       }
 
@@ -293,6 +301,7 @@ export default function GameClientMultiplayer({ roomId, playerName }: { roomId: 
       s.off("player-moved");
       s.off("player-left");
       s.off("player-joined");
+      s.off("player-reconnected");
       s.off("room-state");
       
       // Cleanup voice chat
